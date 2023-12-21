@@ -62,12 +62,7 @@ class BytesWrapper{
         if(o.getClass() != BytesWrapper.class){return false;}
         BytesWrapper wrapper = (BytesWrapper) o;
         if(wrapper.bytes.length != this.bytes.length){return false;}
-        for(int i = 0; i < this.bytes.length; i++){
-            if(bytes[i] != wrapper.bytes[i]){
-                return false;
-            }
-        }
-        return true;
+        return Arrays.equals(this.bytes, ((BytesWrapper) o).bytes);
     }
 
     @Override
@@ -75,11 +70,7 @@ class BytesWrapper{
         int code = 0;
         final int basePrime = 877;
         final int moduloPrime = 27644437;
-        for(int i = 0; i < this.bytes.length; i++){
-            code = (basePrime * code + bytes[i]) % moduloPrime;
-        }
-        return code;
-//        return 1;
+        return Arrays.hashCode(bytes);
     }
 }
 
@@ -88,7 +79,7 @@ public class Main {
     //32kB = 2^15 = 32768
     //1MB = 2^20 = 1048576
     //32MB = 2^25 = 33554432
-    private static final int BUFFER_SIZE = 8192;
+    private static final int BUFFER_SIZE = 1048576;
 
     static Map<Byte, Long> getFreq(String filePath) throws IOException{
         Map<Byte, Long> freq = new HashMap<>();
@@ -212,16 +203,30 @@ public class Main {
 
     static byte[] serialize(long val){
         byte[] arr = new byte[8];
+        long bitmask = 0x00000000000000ffL;
         //Least significant byte
-        arr[7] = (byte)(val & 0x00000000000000ffL);
-        arr[6] = (byte)(val & 0x000000000000ff00L);
-        arr[5] = (byte)(val & 0x0000000000ff0000L);
-        arr[4] = (byte)(val & 0x00000000ff000000L);
-        arr[3] = (byte)(val & 0x000000ff00000000L);
-        arr[2] = (byte)(val & 0x0000ff0000000000L);
-        arr[1] = (byte)(val & 0x00ff000000000000L);
+        arr[7] = (byte)(val & bitmask);
+        arr[6] = (byte)((val >> 8) & bitmask);
+        arr[5] = (byte)((val >> 16) & bitmask);
+        arr[4] = (byte)((val >> 24) & bitmask);
+        arr[3] = (byte)((val >> 32) & bitmask);
+        arr[2] = (byte)((val >> 40) & bitmask);
+        arr[1] = (byte)((val >> 48) & bitmask);
+        //Most significant byte
+        //IGNORE SIGN BIT
+        arr[0] = (byte)((val >> 56) & bitmask);
+        return arr;
+    }
+
+    static byte[] serialize(int val){
+        byte[] arr = new byte[4];
+        int bitmask = 0x000000ff;
+        //least significant byte
+        arr[3] = (byte)(val & bitmask);
+        arr[2] = (byte)((val >> 8) & bitmask);
+        arr[1] = (byte)((val >> 16) & bitmask);
         //most significant byte
-        arr[0] = (byte)(val & 0xff00000000000000L);
+        arr[0] = (byte)((val >> 24) & bitmask);
         return arr;
     }
 
@@ -232,11 +237,11 @@ public class Main {
         return arr;
     }
 
-    static byte[][] serializeCodeLengths(Map<Byte, ArrayList<Character>> codeMap){
-        byte[][] arr = new byte[codeMap.size()][8];
+    static byte[] serializeCodeLengths(Map<Byte, ArrayList<Character>> codeMap){
+        byte[] arr = new byte[codeMap.size()];
         int i = 0;
         for(Byte b: codeMap.keySet()){
-            arr[i++] = serialize(codeMap.get(b).size());
+            arr[i++] = (byte)codeMap.get(b).size();
         }
         return arr;
     }
@@ -319,34 +324,136 @@ public class Main {
             outputStream.write(outBuffer, 0, (outBufferBitIndex/8)+1);
         }
     }
-
     static long deserializeLong(byte[] bytes){
-        long l = 0;
-        l |= (long)bytes[0] << 56;
-        l |= (long)bytes[1] << 48;
-        l |= (long)bytes[2] << 40;
-        l |= (long)bytes[3] << 32;
-        l |= (long)bytes[4] << 24;
-        l |= (long)bytes[5] << 16;
-        l |= (long)bytes[6] << 8;
-        l |= bytes[7];
-        return l;
+        return ByteBuffer.wrap(bytes).getLong();
     }
 
-    static long getUniqueCount(InputStream inputStream) throws IOException {
+    static int deserializeInt(byte[] bytes){
+        return ByteBuffer.wrap(bytes).getInt();
+    }
+
+    static long getOriginalBytesCount(InputStream inputStream) throws IOException{
         byte[] countBytes = inputStream.readNBytes(8);
         return deserializeLong(countBytes);
     }
 
-    static byte[] getUniqueValues(InputStream inputStream, long uniqueCount)
-            throws IOException{
-        //max 256 unique values --> will not exceed int size (max arr length)
-        return inputStream.readNBytes((int)uniqueCount);
+    static int getUniqueCount(InputStream inputStream) throws IOException {
+        byte[] countBytes = inputStream.readNBytes(4);
+        return deserializeInt(countBytes);
     }
 
-//    static byte[] getCodesLengths(InputStream inputStream, long uniqueCount){
-//
-//    }
+    static byte[] getUniqueValues(InputStream inputStream, int uniqueCount)
+            throws IOException{
+        //number of unique values will not exceed max array size
+        //in java, given that max file size = 3GB (for any n)
+        return inputStream.readNBytes(uniqueCount);
+    }
+
+    static byte[] getCodesLengths(InputStream inputStream, int uniqueCount) throws IOException {
+        byte[] lengths = new byte[uniqueCount];
+        inputStream.readNBytes(lengths, 0, uniqueCount);
+        return lengths;
+    }
+
+    static String[] getCodes(
+            InputStream inputStream,
+            int uniqueCount,
+            byte[] lengths
+    ) throws IOException{
+        long totalNumberOfBits = 0;
+        for(byte b: lengths){totalNumberOfBits += b;}
+        //total number of bytes for the codes section in header
+        //recall that codes have variable lengths
+        int byteCount = (int)Math.ceilDiv(totalNumberOfBits, 8);
+        byte[] buffer = new byte[byteCount];
+        inputStream.read(buffer, 0, byteCount);
+//        System.out.println(Arrays.toString(buffer));
+        long bufferBitIndex = 0;
+        String[] codes = new String[uniqueCount];
+        for(int i = 0; i < lengths.length; i++){
+            int codeLength = lengths[i];
+            codes[i] = "";
+            for(int j = 0; j < codeLength; j++){
+                int currBit = (buffer[(int)((bufferBitIndex+j)/8)] &
+                        (1 << (7-(bufferBitIndex+j)%8)));
+//                System.out.println("currBit = "+currBit);
+                codes[i] += (currBit != 0)?"1":"0";
+            }
+            bufferBitIndex += codeLength;
+        }
+        return codes;
+    }
+
+    static void decodeFile(
+            InputStream inputStream,
+            OutputStream outputStream,
+            String[] codes,
+            byte[] uniqueValues,
+            long originalBytesCount
+    ) throws IOException{
+        Map<String, Byte> decoderMap = new HashMap<>();
+        for(int i = 0; i < codes.length; i++){
+            decoderMap.put(codes[i], uniqueValues[i]);
+        }
+        byte[] buffer = new byte[BUFFER_SIZE];
+        byte[] outBuffer = new byte[BUFFER_SIZE];
+        int bytesRead;
+        int outBufferIndex = 0;
+        StringBuilder currKeyBuilder = new StringBuilder();
+        while((bytesRead =
+                inputStream.read(buffer, 0, BUFFER_SIZE)) != -1){
+            long bufferBitIndex = 0;
+            while(originalBytesCount > 0
+                    && bufferBitIndex/8 < buffer.length){
+                int currBit = buffer[(int)(bufferBitIndex/8)]
+                        & (1 << (7-bufferBitIndex%8));
+                currKeyBuilder.append((currBit != 0)? 1:0);
+                Byte value = decoderMap.get(currKeyBuilder.toString());
+//                System.out.println("key = "+currKeyBuilder);
+//                System.out.println("value = "+value);
+                if(value != null){
+                    outBuffer[outBufferIndex++] = value;
+                    currKeyBuilder = new StringBuilder();
+                    originalBytesCount--;
+                }
+                bufferBitIndex++;
+                if(outBufferIndex >= outBuffer.length){
+                    outputStream.write(outBuffer);
+                    outBufferIndex = 0;
+                    Arrays.fill(outBuffer, (byte)0);
+                }
+            }
+            if(originalBytesCount == 0){
+                outputStream.write(outBuffer, 0, outBufferIndex);
+            }
+            Arrays.fill(buffer, (byte)0);
+        }
+    }
+
+    static void decompressFile(String inPath, String outPath) throws IOException{
+        InputStream inputStream = new BufferedInputStream(
+                new FileInputStream(inPath)
+        );
+        OutputStream outputStream = new BufferedOutputStream(
+                new FileOutputStream(outPath)
+        );
+
+        long originalBytesCount = getOriginalBytesCount(inputStream);
+        System.out.println("original # of bytes: "+originalBytesCount);
+        //number of unique values
+        int uniqueValuesCount = getUniqueCount(inputStream);
+        //unique values themselves
+        byte[] uniqueValues = getUniqueValues(inputStream, uniqueValuesCount);
+        //lengths of codes for each unique value
+        byte[] codesLengths = getCodesLengths(inputStream, uniqueValuesCount);
+
+        String[] codes = getCodes(inputStream, uniqueValuesCount, codesLengths);
+
+        decodeFile(inputStream, outputStream, codes, uniqueValues, originalBytesCount);
+
+        inputStream.close();
+        outputStream.close();
+    }
 
     public static void main(String[] args) {
         //\n: line feed, \r: carriage return
@@ -355,27 +462,7 @@ public class Main {
         //"D:\\activity_tests\\test1.in"
         //"D:\\JavaProjects\\HuffmanAlgorithm\\src\\abc.txt"
         //"C:\\Users\\3arrows\\Downloads\\Algorithms - Lectures 7 and 8 (Greedy algorithms).pdf"
-        String path = "C:\\Users\\3arrows\\Downloads\\gbbct10.seq\\gbbct10.seq";
-
-//        long time = System.currentTimeMillis();
-//        try{
-//            getFreq3(path);
-//        }catch (IOException e){
-//            e.printStackTrace();
-//        }
-//        time = System.currentTimeMillis() - time;
-//        System.out.println("Took "+time+" ms");
-
-//        long time = System.currentTimeMillis();
-//        Map<BytesWrapper, Long> freq = new HashMap<>();
-//        try{
-//            freq = getFreq2(path);
-//        }catch (IOException e){
-//            e.printStackTrace();
-//        }
-//        time = System.currentTimeMillis() - time;
-//        System.out.println("Took "+time+" ms");
-//        freq.forEach((k,v)-> System.out.println(k.bytes[0] + ": " + v));
+        String path = "D:\\JavaProjects\\HuffmanAlgorithm\\src\\abc.txt";
 
 
         long time = System.currentTimeMillis();
@@ -385,9 +472,14 @@ public class Main {
         }catch (IOException e){
             e.printStackTrace();
         }
+
         time = System.currentTimeMillis() - time;
         System.out.println("Freq took "+ time +" ms");
-        freq.forEach((k,v)-> System.out.println(Character.toString(k)+", "+k+": "+v));
+//        freq.forEach((k,v)-> System.out.println(Character.toString(k)+", "+k+": "+v));
+
+        System.out.println(freq.size());
+//        freq.forEach((k,v)-> System.out.println(k+": "+v));
+
         time = System.currentTimeMillis();
         TreeNode<Byte> tree = buildTree(freq);
         time = System.currentTimeMillis() - time;
@@ -398,12 +490,18 @@ public class Main {
         time = System.currentTimeMillis() - time;
         System.out.println("Getting codes took "+time+" ms");
 //        codes.forEach((k,v)-> System.out.println(Character.toString(k)+", "+k+": "+v));
+//        codes.forEach((k,v)-> System.out.println(k+": "+v));
 
 //        System.out.println(Arrays.toString(serializeCodes(codes)));
         time = System.currentTimeMillis();
+
+        byte[] originalBytesCount = serialize(
+                freq.values().stream().reduce(0L, Long::sum)
+        );
+        System.out.println(Arrays.toString(originalBytesCount));
         byte[] uniqueValuesCount = serialize(freq.size());
         byte[] serializedKeys = serializeKeys(codes);
-        byte[][] lengths =serializeCodeLengths(codes);
+        byte[] lengths = serializeCodeLengths(codes);
         byte[] byteCode = serializeCodes(codes);
         time = System.currentTimeMillis() - time;
         System.out.println("Header serialization took "+time+" ms");
@@ -414,11 +512,10 @@ public class Main {
             OutputStream outputStream = new BufferedOutputStream(
                     new FileOutputStream("test.bin")
             );
-            outputStream.write(uniqueValuesCount, 0, 8);
+            outputStream.write(originalBytesCount, 0, originalBytesCount.length);
+            outputStream.write(uniqueValuesCount, 0, uniqueValuesCount.length);
             outputStream.write(serializedKeys, 0, codes.size());
-            for(byte[] barr: lengths){
-                outputStream.write(barr, 0, 8);
-            }
+            outputStream.write(lengths, 0, lengths.length);
             outputStream.write(byteCode, 0, byteCode.length);
             time = System.currentTimeMillis() - time;
             System.out.println("Header writing took "+time+" ms");
@@ -428,6 +525,10 @@ public class Main {
             time = System.currentTimeMillis() - time;
             System.out.println("Body writing took "+time+" ms");
             outputStream.close();
+
+
+            decompressFile("test.bin", "d_test.bin");
+
         }catch(IOException e){
             e.printStackTrace();
         }
