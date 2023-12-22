@@ -1,78 +1,7 @@
 import java.io.*;
 import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel;
-import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.util.*;
 
-class TreeNode<T>{
-    T key;
-    long val;
-    TreeNode<T> left;
-    TreeNode<T> right;
-    public TreeNode(T key, long val, TreeNode<T> left, TreeNode<T> right){
-        this.key = key;
-        this.val = val;
-        this.left = left;
-        this.right = right;
-    }
-    public TreeNode<T> min(TreeNode<T> b){
-        return (this.val <= b.val)? this : b;
-    }
-    public TreeNode<T> max(TreeNode<T> b){
-        return (this.val > b.val)? this : b;
-    }
-    public TreeNode<T> mergeWith(TreeNode<T> t, T newKey){
-        return new TreeNode<>(
-                newKey,
-                this.val + t.val,
-                this.min(t),
-                this.max(t)
-        );
-    }
-    @Override
-    public String toString(){
-        if(key == null){
-            return "{ - : "+this.val+"}";
-        }
-        return "{" + this.key.toString() + ": " + this.val + "}";
-    }
-    public void bfs(){
-        Queue<TreeNode<T>> q = new LinkedList<>();
-        q.add(this);
-        while(!q.isEmpty()){
-            TreeNode<T> curr = q.poll();
-            if(curr.left != null){q.add(curr.left);}
-            if(curr.right != null){q.add(curr.right);}
-//            System.out.println(curr);
-        }
-    }
-
-}
-
-class BytesWrapper{
-    public byte[] bytes;
-
-    public BytesWrapper(byte[] bytes){
-        this.bytes = bytes;
-    }
-
-    @Override
-    public boolean equals(Object o){
-        if(o.getClass() != BytesWrapper.class){return false;}
-        BytesWrapper wrapper = (BytesWrapper) o;
-        if(wrapper.bytes.length != this.bytes.length){return false;}
-        return Arrays.equals(this.bytes, ((BytesWrapper) o).bytes);
-    }
-
-    @Override
-    public int hashCode(){
-        int code = 0;
-        final int basePrime = 877;
-        final int moduloPrime = 27644437;
-        return Arrays.hashCode(bytes);
-    }
-}
 
 public class Main {
     //8kB = 2^13 = 8192
@@ -92,15 +21,6 @@ public class Main {
         long totalBytesRead = 0;
         while((bytesRead = inStream.read(buffer)) != -1){
             for(int i = 0; i < bytesRead; i++){
-                //main overhead!!!!!!!!
-//                if(!freq.containsKey(buffer[i])){
-//                    freq.put(buffer[i], 1L);
-//                }else{
-//                    freq.put(buffer[i], freq.get(buffer[i])+1);
-//                }
-                //fast but not memory efficient
-//                freqArr[buffer[i]]++;
-                //little improvement
                 freq.compute(
                         buffer[i],
                         (key, oldValue) -> oldValue==null?1:oldValue+1
@@ -108,60 +28,8 @@ public class Main {
             }
             totalBytesRead += bytesRead;
         }
-//            System.out.println("Total bytes read: "+ totalBytesRead);
-        inStream.close();
-//        for(int i = 0; i < freqArr.length; i++){
-//            if(freqArr[i] != 0){
-//                freq.put((byte)i, freqArr[i]);
-//            }
-//        }
-
-        return freq;
-    }
-
-    static Map<BytesWrapper, Long> getFreq2(String filePath) throws IOException{
-        Map<BytesWrapper, Long> freq = new HashMap<>();
-        InputStream inStream = new BufferedInputStream(
-                new FileInputStream(filePath)
-        );
-        int bytesRead = 0;
-        byte[] buffer = new byte[BUFFER_SIZE];
-        long totalBytesRead = 0;
-        byte[] barr = new byte[1];
-        BytesWrapper wrapper = new BytesWrapper(barr);
-        while((bytesRead = inStream.read(buffer)) != -1){
-            for(int i = 0; i < bytesRead; i++){
-                barr[0] = buffer[i];
-                freq.compute(
-                        wrapper,
-                        (key, oldValue) -> oldValue==null?1:oldValue+1
-                );
-            }
-            totalBytesRead += bytesRead;
-        }
         inStream.close();
         return freq;
-    }
-
-    static void getFreq3(String filePath) throws IOException{
-        Set<BytesWrapper> freq = new HashSet<>();
-        InputStream inStream = new BufferedInputStream(
-                new FileInputStream(filePath)
-        );
-        int bytesRead = 0;
-        byte[] buffer = new byte[BUFFER_SIZE];
-        long totalBytesRead = 0;
-        while((bytesRead = inStream.read(buffer)) != -1){
-            for(int i = 0; i < bytesRead; i++){
-                byte[] barr = new byte[1];
-                BytesWrapper wrapper = new BytesWrapper(barr);
-                barr[0] = buffer[i];
-                freq.add(wrapper);
-            }
-            totalBytesRead += bytesRead;
-        }
-        inStream.close();
-        freq.forEach((k)-> System.out.println(k.bytes[0]));
     }
 
     static TreeNode<Byte> buildTree(Map<Byte, Long> freq){
@@ -437,7 +305,7 @@ public class Main {
         OutputStream outputStream = new BufferedOutputStream(
                 new FileOutputStream(outPath)
         );
-
+        //to avoid decoding padding
         long originalBytesCount = getOriginalBytesCount(inputStream);
         System.out.println("original # of bytes: "+originalBytesCount);
         //number of unique values
@@ -512,6 +380,7 @@ public class Main {
             OutputStream outputStream = new BufferedOutputStream(
                     new FileOutputStream("test.bin")
             );
+            //to ignore padding at end of bitString
             outputStream.write(originalBytesCount, 0, originalBytesCount.length);
             outputStream.write(uniqueValuesCount, 0, uniqueValuesCount.length);
             outputStream.write(serializedKeys, 0, codes.size());
