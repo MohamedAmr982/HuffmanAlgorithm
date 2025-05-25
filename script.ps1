@@ -1,8 +1,8 @@
 # script.ps1
 
 
-$file1 = "D:\JavaProjects\HuffmanAlgorithm\src\abc.txt"
-$file2 = "D:\JavaProjects\HuffmanAlgorithm\d_test.bin"
+$file1 = "C:\Users\3arrows\Downloads\Algorithms - Lectures 7 and 8 (Greedy algorithms).pdf"
+$file2 = "C:\Users\3arrows\Downloads\extracted.Algorithms - Lectures 7 and 8 (Greedy algorithms).pdf"
 
 
 $hash1 = Get-FileHash -Path $file1 -Algorithm SHA256 | Select-Object -ExpandProperty Hash

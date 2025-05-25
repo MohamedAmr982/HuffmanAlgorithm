@@ -2,20 +2,27 @@ import java.io.*;
 import java.util.*;
 
 public class HuffmanEncoder {
-    private int n;
+    // input word size
+    private final int n;
     private String filePath;
-    //8kB = 2^13 = 8192
-    //32kB = 2^15 = 32768
-    //1MB = 2^20 = 1048576
-    //32MB = 2^25 = 33554432
+    private String outFilePath;
+    // 8kB = 2^13 = 8192
+    // 32kB = 2^15 = 32768
+    // 512kB = 2^19 = 524288
     private static final int BUFFER_SIZE = 8192;
 
     public HuffmanEncoder(int n, String filePath){
         this.n = n;
         this.filePath = filePath;
+        this.outFilePath = HuffmanUtility.getFilePath(this.filePath)
+                +System.getProperty("file.separator")
+                +this.n
+                +"."
+                +HuffmanUtility.getFileName(this.filePath)
+                +".hc";
     }
 
-    public Map<List<Byte>, Long> getFreq() throws IOException{
+    private Map<List<Byte>, Long> getFreq() throws IOException{
         Map<List<Byte>, Long> freq = new HashMap<>();
         InputStream inputStream = new BufferedInputStream(
                 new FileInputStream(filePath)
@@ -45,7 +52,8 @@ public class HuffmanEncoder {
         return freq;
     }
 
-    public TreeNode<List<Byte>> buildTree(Map<List<Byte>, Long> freq){
+    private TreeNode<List<Byte>> buildTree(Map<List<Byte>, Long> freq){
+        // min heap
         PriorityQueue<TreeNode<List<Byte>>> pq = new PriorityQueue<>(
                 (o1, o2) -> (int) (o1.val - o2.val)
         );
@@ -60,30 +68,31 @@ public class HuffmanEncoder {
         return pq.poll();
     }
 
-    private void go(
+    private void assignCodesToTreeNodes(
             TreeNode<List<Byte>> tree,
             Map<List<Byte>, StringBuilder> codes,
             StringBuilder code
     ){
         if(tree.left == tree.right){
+            // leaf
             codes.put(tree.key, new StringBuilder(code));
             return;
         }
         code.append('0');
-        go(tree.left, codes, code);
+        assignCodesToTreeNodes(tree.left, codes, code);
         code.replace(code.length()-1, code.length(), "1");
-        go(tree.right, codes, code);
+        assignCodesToTreeNodes(tree.right, codes, code);
         code.delete(code.length()-1, code.length());
     }
 
-    public Map<List<Byte>, StringBuilder> getCodes(TreeNode<List<Byte>> tree){
+    private Map<List<Byte>, StringBuilder> getCodes(TreeNode<List<Byte>> tree){
         Map<List<Byte>, StringBuilder> codes = new HashMap<>();
         StringBuilder code = new StringBuilder();
-        go(tree, codes, code);
+        assignCodesToTreeNodes(tree, codes, code);
         return codes;
     }
 
-    public void writeEncodedBody(
+    private void writeEncodedBody(
             Map<List<Byte>, StringBuilder> codes,
             OutputStream outputStream
     ) throws IOException{
@@ -117,13 +126,13 @@ public class HuffmanEncoder {
             codes = getCodes(tree);
         }
 
-        codes.forEach((k,v)-> System.out.println(k+": "+v));
+//        codes.forEach((k,v)-> System.out.println(k+": "+v));
 
         var codesList =
                 HuffmanUtility.getCodesList(n, codes);
 
         OutputStream outputStream = new BufferedOutputStream(
-                new FileOutputStream("test.bin")
+                new FileOutputStream(getOutFilePath())
         );
 
         //n
@@ -167,12 +176,12 @@ public class HuffmanEncoder {
         outputStream.close();
     }
 
-    public static void main(String[] args) throws IOException {
-        HuffmanEncoder encoder = new HuffmanEncoder(
-                2,
-                "C:\\Users\\3arrows\\Downloads\\gbbct10.seq\\gbbct10.seq"
-        );
+    public String getOutFilePath(){
+        return this.outFilePath;
+    }
 
-        encoder.compressFile();
+    public float getCompressionRatio(){
+        return HuffmanUtility.getFileSize(this.outFilePath) * 1.0f
+                / HuffmanUtility.getFileSize(this.filePath);
     }
 }

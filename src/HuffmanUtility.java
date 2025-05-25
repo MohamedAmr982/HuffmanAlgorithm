@@ -1,4 +1,4 @@
-import java.io.IOException;
+import java.io.File;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
@@ -119,6 +119,24 @@ public class HuffmanUtility {
         return writer.get();
     }
 
+    static long deserializeLong(byte[] longBytes){
+        return ByteBuffer.wrap(longBytes).getLong();
+    }
 
+    static int deserializeInt(byte[] intBytes){
+        return ByteBuffer.wrap(intBytes).getInt();
+    }
+
+    static String getFileName(String absolutePath){
+        return new File(absolutePath).getName();
+    }
+
+    static String getFilePath(String absolutePath){
+        return new File(absolutePath).getParent();
+    }
+
+    static long getFileSize(String absolutePath){
+        return new File(absolutePath).length();
+    }
 
 }
